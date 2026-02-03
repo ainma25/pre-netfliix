@@ -8,6 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // Initialize streaming page
 async function initStreamingPage() {
     try {
+        // Restore the current content from sessionStorage
+        const contentData = sessionStorage.getItem('currentContent');
+        if (contentData) {
+            window.currentContent = JSON.parse(contentData);
+        }
+        
         // Get URL parameters
         const params = getQueryParams();
         
@@ -45,7 +51,7 @@ function getQueryParams() {
 
 // Update meta tags
 function updateMetaTags(params) {
-    document.title = params.title ? `${params.title} - Priflix` : 'Priflix';
+    document.title = params.title ? `${params.title} - Pariflix` : 'Pariflix';
     
     const folderIdMeta = document.getElementById('folderid');
     const titleMeta = document.getElementById('title');
@@ -195,20 +201,39 @@ async function setupContentDetails(params) {
     // Update Add to List button state
     updateAddToListButton(params);
     
+    // If this is local content, prefer local cast and basic content info
+    if (window.currentContent?.origin === 'Local') {
+        const fullContent = window.contentData?.find(item => item.title === params.title);
+        if (fullContent) {
+            // Update basic UI using local data
+            updateBasicContentDetails(params.title, params.type);
+            // If local custom cast exists, render it (replicates TMDB layout)
+            if (fullContent.cast && Array.isArray(fullContent.cast)) {
+                displayCustomCast(fullContent.cast);
+            }
+            return;
+        }
+    }
+
     // If we have a TMDB ID, fetch details from TMDB
     if (params.tmdbId) {
         const details = await fetchTMDBDetails(params.tmdbId, params.type);
         if (!details) {
             // If TMDB API is disabled or failed, use basic content details
             updateBasicContentDetails(params.title, params.type);
+        } else {
+            // Use TMDB details (this will update cast via updateCastSection)
+            const tmdbType = CONFIG.TMDB_SEARCH_TYPES[params.type] || 'movie';
+            updateContentDetailsUI(details, tmdbType);
+            return;
         }
-    } else {
-        // Otherwise use the title to search TMDB
-        const details = await searchAndFetchTMDBDetails(params.title, params.type);
-        if (!details) {
-            // If TMDB API is disabled or failed, use basic content details
-            updateBasicContentDetails(params.title, params.type);
-        }
+    }
+
+    // Otherwise use the title to search TMDB
+    const details = await searchAndFetchTMDBDetails(params.title, params.type);
+    if (!details) {
+        // If TMDB API is disabled or failed, use basic content details
+        updateBasicContentDetails(params.title, params.type);
     }
 }
 
@@ -219,13 +244,25 @@ async function fetchAndDisplayContent(params) {
         // Set title in the UI
         document.getElementById('currentEpisodeTitle').textContent = params.episodeTitle || params.title;
         
-        // FIRST: Check for local video URL
-        if (params.videoUrl) {
-            console.log('Playing local video:', params.videoUrl);
-            playLocalVideo(params.videoUrl, params.title || 'Video');
-            const episodesSection = document.getElementById('episodes');
-            if (episodesSection) episodesSection.style.display = 'none';
-            return;
+        // FIRST: Check for local content (single file or episodes defined in content-data)
+        if (window.currentContent?.origin === 'Local') {
+            const fullContent = window.contentData?.find(item => item.title === params.title);
+            if (fullContent) {
+                // If local episodes array is provided, handle as a series
+                if (Array.isArray(fullContent.episodes) && fullContent.episodes.length) {
+                    await processLocalEpisodes(fullContent.episodes, params.title);
+                    return;
+                }
+                // Otherwise if a direct video URL/localPath was provided in params or content, play it
+                const localUrl = params.videoUrl || fullContent.localPath;
+                if (localUrl) {
+                    console.log('Playing local video:', localUrl);
+                    playLocalVideo(localUrl, params.title || 'Video');
+                    const episodesSection = document.getElementById('episodes');
+                    if (episodesSection) episodesSection.style.display = 'none';
+                    return;
+                }
+            }
         }
         
         // SECOND: If we have a specific episode ID, play that episode
@@ -404,6 +441,23 @@ function playLocalVideo(url, title) {
             diag.textContent = `Detected video size: ${video.videoWidth}x${video.videoHeight} — codec may be unsupported.`;
             videoPlayer.appendChild(diag);
         }
+        // Update duration for local episode if we have one
+        try {
+            const durationInSeconds = Math.floor(video.duration || 0);
+            const episodes = window.currentEpisodes || [];
+            const idx = window.currentEpisodeIndex || 0;
+            if (episodes[idx]) {
+                episodes[idx].duration = durationInSeconds;
+                // Update any episode card duration element
+                const card = document.querySelector(`.episode-card[data-id="${episodes[idx].id}"]`) || document.querySelectorAll('.episode-card')[idx];
+                if (card) {
+                    const durEl = card.querySelector('.episode-duration');
+                    if (durEl) durEl.textContent = formatDuration(durationInSeconds);
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
     });
 
     video.addEventListener('canplay', () => {
@@ -566,6 +620,47 @@ async function processEpisodes(files, folderId) {
     displayEpisodesList(episodes, folderId);
     
     // Update navigation buttons
+    updateNavigationButtons();
+}
+
+// Process local episodes provided in `content-data.js`
+async function processLocalEpisodes(episodesArray, title) {
+    if (!Array.isArray(episodesArray) || episodesArray.length === 0) {
+        showErrorMessage('No local episodes found.');
+        return;
+    }
+
+    // Normalize to the same shape used by drive-processed episodes
+    const episodes = episodesArray.map((e, idx) => ({
+        id: e.id || `local-${idx + 1}`,
+        name: e.title || e.name || (e.localPath ? e.localPath.split('/').pop() : `Episode ${idx + 1}`),
+        title: e.title || `Episode ${e.episodeNumber || idx + 1}`,
+        seasonNumber: e.seasonNumber || 1,
+        episodeNumber: e.episodeNumber || (idx + 1),
+        still_path: null,
+        overview: e.overview || null,
+        thumbnailLink: e.image || null,
+        duration: e.duration || null,
+        localPath: e.localPath || null
+    }));
+
+    // Store episodes in window for navigation
+    window.currentEpisodes = episodes;
+    window.currentEpisodeIndex = 0;
+
+    // Play the first episode (local)
+    if (episodes.length > 0) {
+        const first = episodes[0];
+        if (first.localPath) {
+            playLocalVideo(first.localPath, first.title);
+        } else {
+            // fallback: if no localPath, but id points to Drive, try playVideo
+            playVideo(first.id, first.title);
+        }
+    }
+
+    // Display episodes list using the existing renderer to ensure consistent layout
+    displayEpisodesList(episodes, null);
     updateNavigationButtons();
 }
 
@@ -883,12 +978,19 @@ function displayEpisodesList(episodes, folderId) {
             </div>
         `;
         
-        // Add click event to play the episode
+        // Add click event to play the episode (supports Drive or local files)
         episodeCard.addEventListener('click', () => {
-            playVideo(episode.id, episode.title);
             window.currentEpisodeIndex = index;
             updateNavigationButtons();
-            
+
+            if (episode.localPath) {
+                // Local file playback
+                playLocalVideo(episode.localPath, episode.title);
+            } else {
+                // Drive playback
+                playVideo(episode.id, episode.title);
+            }
+
             // Update URL with episode info
             const params = getQueryParams();
             const url = new URL(window.location.href);
@@ -1030,10 +1132,15 @@ function playPreviousEpisode() {
     
     if (currentIndex > 0) {
         const prevEpisode = episodes[currentIndex - 1];
-        playVideo(prevEpisode.id, prevEpisode.title);
+        // Use local playback when available
+        if (prevEpisode.localPath) {
+            playLocalVideo(prevEpisode.localPath, prevEpisode.title);
+        } else {
+            playVideo(prevEpisode.id, prevEpisode.title);
+        }
         window.currentEpisodeIndex = currentIndex - 1;
         updateNavigationButtons();
-        
+
         // Update URL with episode info
         const url = new URL(window.location.href);
         url.searchParams.set('episodeId', prevEpisode.id);
@@ -1049,10 +1156,14 @@ function playNextEpisode() {
     
     if (currentIndex < episodes.length - 1) {
         const nextEpisode = episodes[currentIndex + 1];
-        playVideo(nextEpisode.id, nextEpisode.title);
+        if (nextEpisode.localPath) {
+            playLocalVideo(nextEpisode.localPath, nextEpisode.title);
+        } else {
+            playVideo(nextEpisode.id, nextEpisode.title);
+        }
         window.currentEpisodeIndex = currentIndex + 1;
         updateNavigationButtons();
-        
+
         // Update URL with episode info
         const url = new URL(window.location.href);
         url.searchParams.set('episodeId', nextEpisode.id);
@@ -1255,26 +1366,84 @@ function updateContentDetailsUI(details, contentType) {
 function displayCustomCast(castData) {
     const castSection = document.querySelector('.cast-section');
     if (!castSection) return;
-    
+
     castSection.style.display = 'block';
-    const castContainer = document.querySelector('.cast-container');
+    const castContainer = document.getElementById('castContainer');
     if (!castContainer) return;
-    
+
+    // Clear existing
     castContainer.innerHTML = '';
-    
-    castData.forEach(member => {
-        const castItem = document.createElement('div');
-        castItem.className = 'cast-item';
-        castItem.innerHTML = `
-            <div class="cast-image" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">
-                ${member.name.charAt(0).toUpperCase()}
-            </div>
-            <div class="cast-details">
+
+    if (!castData || !Array.isArray(castData) || castData.length === 0) {
+        castSection.style.display = 'none';
+        return;
+    }
+
+    // Fallback SVG (data URI) used when there is no network or no image available
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='138' height='175'><rect width='100%' height='100%' fill='%23222222'/><text x='50%' y='50%' fill='%23ffffff' font-size='14' font-family='Arial, Helvetica, sans-serif' dominant-baseline='middle' text-anchor='middle'>No Image</text></svg>`;
+    const fallback = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+
+    // Display top 10 local cast members to match TMDB layout
+    const topCast = castData.slice(0, 10);
+
+    topCast.forEach(member => {
+        const castCard = document.createElement('div');
+        castCard.className = 'cast-card';
+
+        // Resolve image path: use the exact `contentData.cast.image` value and convert to absolute URL
+        const rawSrc = member.image || '';
+        let src;
+        if (rawSrc) {
+            try {
+                if (/^https?:\/\//i.test(rawSrc) || /^\/\//.test(rawSrc)) {
+                    src = rawSrc;
+                } else {
+                    // Convert relative path to absolute URL based on current location
+                    src = new URL(rawSrc, window.location.href).href;
+                }
+            } catch (e) {
+                src = rawSrc;
+            }
+        } else {
+            src = fallback;
+        }
+
+        castCard.innerHTML = `
+            <img src="${src}" alt="${member.name}" class="cast-photo" data-original="${member.image || ''}">
+            <div class="cast-info">
                 <div class="cast-name">${member.name}</div>
-                <div class="cast-character">${member.character}</div>
+                <div class="cast-character">${member.character || ''}</div>
             </div>
         `;
-        castContainer.appendChild(castItem);
+
+        // Debug: log image src for DevTools troubleshooting (shows final request URL)
+        try { console.debug('Render local cast image:', { name: member.name, requestedSrc: src, declaredInData: member.image }); } catch (e) {}
+
+        // Attach onerror handler to replace with fallback if image load fails
+        const img = castCard.querySelector('img');
+        if (img) {
+            img.onerror = function() {
+                this.onerror = null;
+                this.src = fallback;
+            };
+        }
+
+        castContainer.appendChild(castCard);
+    });
+}
+
+// Normalize local cast entries to TMDB-like cast objects
+function normalizeCastForTMDB(castData) {
+    if (!castData || !Array.isArray(castData)) return [];
+    return castData.map((m, idx) => {
+        // Prefer an existing profile_path, fall back to image, else empty string
+        const profile_path = m.profile_path || m.image || '';
+        return {
+            id: m.id || -(idx + 1),
+            name: m.name || m.person || 'Unknown',
+            character: m.character || m.role || '',
+            profile_path: profile_path
+        };
     });
 }
 
@@ -1292,13 +1461,21 @@ function updateBasicContentDetails(title, contentType) {
         contentOverview.textContent = `${title} is available for streaming. Click play to start watching.`;
     }
     
-    // Custom cast for "Travel"
-    if (title === 'Travel') {
-        const customCast = [
-            { name: 'AK', character: 'Mts' },
-            { name: 'PK', character: 'Pils' }
-        ];
-        displayCustomCast(customCast);
+    // Check if this is a local content and has cast data
+    if (window.currentContent?.origin === 'Local') {
+        // Look up the full content item from contentData
+        const fullContent = window.contentData?.find(item => item.title === title);
+        if (fullContent?.cast && Array.isArray(fullContent.cast)) {
+            const normalized = normalizeCastForTMDB(fullContent.cast);
+            updateCastSection(normalized);
+            return;
+        }
+    }
+    
+    // Check if content has custom cast data stored
+    if (window.currentContent?.cast && Array.isArray(window.currentContent.cast)) {
+        const normalized = normalizeCastForTMDB(window.currentContent.cast);
+        updateCastSection(normalized);
         return;
     }
     
@@ -1323,27 +1500,40 @@ function updateCastSection(cast) {
         if (castSection) castSection.style.display = 'none';
         return;
     }
-    
+
+    // Fallback SVG (data URI) used when there is no network or no image available
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='138' height='175'><rect width='100%' height='100%' fill='%23222222'/><text x='50%' y='50%' fill='%23ffffff' font-size='14' font-family='Arial, Helvetica, sans-serif' dominant-baseline='middle' text-anchor='middle'>No Image</text></svg>`;
+    const fallback = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+
     // Display top 10 cast members
     const topCast = cast.slice(0, 10);
-    
+
     topCast.forEach(actor => {
-        if (!actor.profile_path) return; // Skip actors without profile images
-        
         const castCard = document.createElement('div');
         castCard.className = 'cast-card';
-        
+
+        // Determine image source (allow full URLs or TMDB paths)
+        const src = actor.profile_path ? getTMDBImageUrl(actor.profile_path, CONFIG.TMDB_PROFILE_SIZE) : fallback;
+
         castCard.innerHTML = `
-            <img src="${getTMDBImageUrl(actor.profile_path, CONFIG.TMDB_PROFILE_SIZE)}" 
+            <img src="${src}" 
                  alt="${actor.name}" 
-                 class="cast-photo"
-                 onerror="this.src='https://via.placeholder.com/138x175?text=No+Image'">
+                 class="cast-photo">
             <div class="cast-info">
                 <div class="cast-name">${actor.name}</div>
                 <div class="cast-character">${actor.character}</div>
             </div>
         `;
-        
+
+        // Attach onerror handler to replace with fallback if image load fails
+        const img = castCard.querySelector('img');
+        if (img) {
+            img.onerror = function() {
+                this.onerror = null;
+                this.src = fallback;
+            };
+        }
+
         castContainer.appendChild(castCard);
     });
 }

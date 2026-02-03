@@ -5,14 +5,22 @@ const contentData = [//add content detail here
         origin: "Local",
         localPath: "videos/Canada_cricket_net.mp4",
         type: "Anime",
+        cast: [
+            { name: "AK", character: "Mts", image: "images/cast/Image_pills.png" },
+            { name: "PK", character: "Pils", image: "images/cast/Vegeta2.jpg" }
+        ]
     },
     {
         title: "AL",
         image: "images/DSC_0002.jpg",
         origin: "Local",
-        // localPath: "videos/Canada_cricket_net2.MOV",
+        // localPath: "videos/Canada_cricket_net2.MOV", ####MOV is not working needs to convert it 
         localPath: "videos/WhatsApp.mp4",
         type: "Movie",
+        cast: [
+            { name: "AK", character: "Mts", image: "images/cast/Image_pills.png" },
+            { name: "PK", character: "Pils", image: "images/cast/Vegeta.jpg" }
+        ]
     },
     {
         title: "abde",

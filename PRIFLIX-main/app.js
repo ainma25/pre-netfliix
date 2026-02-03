@@ -605,6 +605,9 @@ function navigateToStreamingPage(contentItem) {
         url.searchParams.set('tmdbId', contentItem.tmdbId);
     }
     
+    // Store the entire content object in sessionStorage for access on streaming page
+    sessionStorage.setItem('currentContent', JSON.stringify(contentItem));
+    
     // Navigate to the streaming page
     window.location.href = url.toString();
 }
@@ -655,7 +658,19 @@ function getDriveFolderUrl(folderId) {
 
 // Get TMDB image URL
 function getTMDBImageUrl(path, size) {
-    return `${CONFIG.TMDB_IMAGE_BASE_URL}${size}${path}`;
+    if (!path) return '';
+    // If path is already a full URL, return it as-is
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
+    // If path is root-relative (starts with /) or a local relative assets path (images/...),
+    // return it directly so local files are used instead of prefixing TMDB base URL.
+    if (path.startsWith('/') || /^images\//i.test(path) || /\.(jpg|jpeg|png|gif|webp)$/i.test(path)) {
+        return path;
+    }
+    // Otherwise assume it's a TMDB path (ensure it has a leading slash)
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return `${CONFIG.TMDB_IMAGE_BASE_URL}${size}${normalized}`;
 }
 
 // Play content from Google Drive - kept for backwards compatibility but mostly replaced by streaming.html

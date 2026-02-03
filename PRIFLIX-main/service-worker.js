@@ -1,6 +1,6 @@
 // Set cache version for your app
 const CACHE_VERSION = 'V8'; // Increment this version when making changes
-const CACHE_NAME = `priflix-cache-${CACHE_VERSION}`;
+const CACHE_NAME = `pariflix-cache-${CACHE_VERSION}`;
 
 
 // Files to cache (HTML, CSS, JS)

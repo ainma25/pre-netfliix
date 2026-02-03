@@ -1,7 +1,7 @@
 {
-  "name": "Priflix",
-  "short_name": "Priflix",
-  "description": "Priflix is a private Netflix-like website designed by Tejas Mali.",
+  "name": "Pariflix",
+  "short_name": "Pariflix",
+  "description": "Pariflix is a private Netflix-like website .",
   "start_url": "/index.html",
   "scope": "/",
   "display": "standalone",
