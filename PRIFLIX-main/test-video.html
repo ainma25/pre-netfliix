@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Codec Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #ff0000;
+        }
+        video {
+            width: 100%;
+            max-width: 600px;
+            background: #000;
+            border: 2px solid #ff0000;
+            margin: 20px 0;
+        }
+        .info {
+            background: #222;
+            padding: 15px;
+            margin: 20px 0;
+            border-left: 3px solid #ff0000;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .good { color: #0f0; }
+        .bad { color: #f00; }
+        button {
+            background: #ff0000;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #cc0000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Video Codec Diagnostic Test</h1>
+        
+        <div class="info">
+            <p>This page tests if your browser can play the local MP4 file.</p>
+            <p><strong>File:</strong> videos/Canada_cricket_net.mp4</p>
+        </div>
+
+        <h2>Video Player</h2>
+        <video id="testVideo" controls autoplay>
+            <source src="videos/WhatsApp.mp4" type="video/quicktime">
+            Your browser does not support the video tag.
+        </video>
+
+        <h2>Diagnostic Information</h2>
+        <div id="diagnostics"></div>
+
+        <h2>Actions</h2>
+        <button onclick="checkCanPlayType()">Check Browser Codec Support</button>
+        <button onclick="fetchVideoInfo()">Fetch Video File Info</button>
+        <button onclick="inspectVideoElement()">Inspect Video Element</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('testVideo');
+        const diagnostics = document.getElementById('diagnostics');
+
+        function addStatus(label, value, isGood = null) {
+            const div = document.createElement('div');
+            div.className = 'status';
+            if (isGood === true) div.classList.add('good');
+            if (isGood === false) div.classList.add('bad');
+            div.innerHTML = `<strong>${label}:</strong> ${value}`;
+            diagnostics.appendChild(div);
+        }
+
+        function clearDiagnostics() {
+            diagnostics.innerHTML = '';
+        }
+
+        function checkCanPlayType() {
+            clearDiagnostics();
+            addStatus('Browser', navigator.userAgent.split(' ').slice(-1)[0]);
+            
+            const canPlayMP4 = video.canPlayType('video/mp4');
+            const canPlayH264 = video.canPlayType('video/mp4; codecs="avc1.42E01E"');
+            const canPlayAAC = video.canPlayType('audio/aac');
+            
+            addStatus('Can play video/mp4', canPlayMP4 || 'no', !!canPlayMP4);
+            addStatus('Can play H.264 + AAC', canPlayH264 || 'no', !!canPlayH264);
+            addStatus('Can play AAC audio', canPlayAAC || 'no', !!canPlayAAC);
+            
+            const supportedCodecs = [];
+            if (video.canPlayType('video/mp4; codecs="avc1"')) supportedCodecs.push('H.264');
+            if (video.canPlayType('video/webm; codecs="vp8, vorbis"')) supportedCodecs.push('VP8');
+            if (video.canPlayType('video/webm; codecs="vp9"')) supportedCodecs.push('VP9');
+            if (video.canPlayType('video/mp4; codecs="hev1"')) supportedCodecs.push('HEVC/H.265');
+            
+            addStatus('Supported video codecs', supportedCodecs.join(', ') || 'none detected', true);
+        }
+
+        function fetchVideoInfo() {
+            clearDiagnostics();
+            fetch('videos/Canada_cricket_net.mp4', { method: 'HEAD' })
+                .then(r => {
+                    addStatus('HTTP Status', r.status, r.status === 200);
+                    addStatus('Content-Type', r.headers.get('content-type'), true);
+                    addStatus('Content-Length', (r.headers.get('content-length') / 1024 / 1024).toFixed(2) + ' MB', true);
+                    addStatus('File accessible', 'Yes', true);
+                })
+                .catch(err => {
+                    addStatus('File fetch error', err.message, false);
+                });
+        }
+
+        function inspectVideoElement() {
+            clearDiagnostics();
+            addStatus('Video element exists', video ? 'Yes' : 'No', !!video);
+            addStatus('Video readyState', video.readyState + ' (0=HAVE_NOTHING, 1=HAVE_METADATA, 2=HAVE_CURRENT_DATA, 3=HAVE_FUTURE_DATA, 4=HAVE_ENOUGH_DATA)', true);
+            addStatus('Video networkState', video.networkState + ' (0=NETWORK_EMPTY, 1=NETWORK_IDLE, 2=NETWORK_LOADING, 3=NETWORK_NO_SOURCE)', true);
+            
+            if (video.error) {
+                const errCode = video.error.code;
+                const errNames = ['', 'MEDIA_ERR_ABORTED', 'MEDIA_ERR_NETWORK', 'MEDIA_ERR_DECODE', 'MEDIA_ERR_SRC_NOT_SUPPORTED'];
+                addStatus('Video error', errNames[errCode] || 'Unknown', false);
+            } else {
+                addStatus('Video error', 'None', true);
+            }
+
+            if (video.videoWidth > 0) {
+                addStatus('Video dimensions', `${video.videoWidth}x${video.videoHeight}px`, true);
+                addStatus('Video duration', video.duration ? video.duration.toFixed(2) + 's' : 'unknown', true);
+                addStatus('Can display video', 'Yes - browser decoded video track', true);
+            } else {
+                addStatus('Video dimensions', `${video.videoWidth}x${video.videoHeight}px (zero = codec not supported)`, false);
+                addStatus('Video duration', video.duration ? video.duration.toFixed(2) + 's' : 'unknown (metadata may have loaded)', video.duration > 0);
+                addStatus('Can display video', 'No - browser cannot decode video track', false);
+                addStatus('Likely issue', 'Video codec (HEVC/H.265?) not supported by browser. Audio may still play.', false);
+            }
+        }
+
+        // Auto-run diagnostics on load
+        video.addEventListener('loadedmetadata', () => {
+            console.log('Metadata loaded');
+            inspectVideoElement();
+        });
+
+        video.addEventListener('error', (e) => {
+            clearDiagnostics();
+            addStatus('Playback error', video.error && video.error.message || 'Unknown', false);
+        });
+
+        // Initial check
+        setTimeout(() => {
+            checkCanPlayType();
+        }, 100);
+    </script>
+</body>
+</html>

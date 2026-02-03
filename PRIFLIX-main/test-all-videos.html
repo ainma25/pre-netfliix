@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Format Test - All Videos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #ff0000;
+            text-align: center;
+        }
+        .video-test {
+            background: #222;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 3px solid #ff0000;
+            border-radius: 4px;
+        }
+        video {
+            width: 100%;
+            max-width: 500px;
+            background: #000;
+            border: 2px solid #ff0000;
+            margin: 10px 0;
+            display: block;
+        }
+        .status {
+            padding: 10px;
+            margin: 5px 0;
+            background: #333;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .good { background: #1a4d1a; color: #0f0; }
+        .bad { background: #4d1a1a; color: #f00; }
+        h2 {
+            color: #ddd;
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 Video Format Compatibility Test</h1>
+        <p style="text-align: center; color: #aaa;">Testing all videos in the project</p>
+
+        <div class="video-test">
+            <h2>1. Canada_cricket_net.mp4</h2>
+            <video id="video1" controls>
+                <source src="videos/Canada_cricket_net.mp4" type="video/mp4">
+            </video>
+            <div id="status1" class="status">Loading...</div>
+        </div>
+
+        <div class="video-test">
+            <h2>2. Canada_cricket_net2.MOV</h2>
+            <video id="video2" controls>
+                <source src="videos/Canada_cricket_net2.MOV" type="video/quicktime">
+            </video>
+            <div id="status2" class="status">Loading...</div>
+        </div>
+
+        <div class="video-test">
+            <h2>3. WhatsApp.mp4</h2>
+            <video id="video3" controls>
+                <source src="videos/WhatsApp.mp4" type="video/mp4">
+            </video>
+            <div id="status3" class="status">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        function testVideo(videoId, statusId, filename) {
+            const video = document.getElementById(videoId);
+            const statusEl = document.getElementById(statusId);
+
+            video.addEventListener('loadedmetadata', () => {
+                const canPlay = video.videoWidth > 0 && video.videoHeight > 0;
+                const msg = canPlay 
+                    ? `✓ SUCCESS: ${video.videoWidth}x${video.videoHeight}px, ${video.duration.toFixed(2)}s`
+                    : `✗ FAIL: 0x0px (codec not supported)`;
+                statusEl.textContent = msg;
+                statusEl.className = 'status ' + (canPlay ? 'good' : 'bad');
+            });
+
+            video.addEventListener('error', () => {
+                const errCode = video.error?.code || 'unknown';
+                const errNames = ['', 'ABORTED', 'NETWORK', 'DECODE', 'SRC_NOT_SUPPORTED'];
+                statusEl.textContent = `✗ ERROR: ${errNames[errCode] || errCode}`;
+                statusEl.className = 'status bad';
+            });
+
+            video.addEventListener('canplay', () => {
+                if (!statusEl.textContent.includes('SUCCESS')) {
+                    statusEl.textContent = '✓ Can play (audio may work)';
+                    statusEl.className = 'status good';
+                }
+            });
+        }
+
+        // Test all videos
+        testVideo('video1', 'status1', 'Canada_cricket_net.mp4');
+        testVideo('video2', 'status2', 'Canada_cricket_net2.MOV');
+        testVideo('video3', 'status3', 'WhatsApp.mp4');
+    </script>
+</body>
+</html>
